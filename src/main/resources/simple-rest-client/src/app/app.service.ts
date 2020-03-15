@@ -2,62 +2,54 @@ import { Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { HttpClient, HttpRequest, HttpParams, HttpHeaders } from '@angular/common/http';
 
-import { CookieService } from 'ngx-cookie-service';
+import { OAuthService } from 'angular-oauth2-oidc';
 import { Observable } from 'rxjs';
 
 export class Foo {
-  constructor(public id: number, public name: string) { }
+   constructor(public id: number, public name: string) { }
 }
 
 @Injectable({
-  providedIn: 'root'
+   providedIn: 'root'
 })
 export class AppService {
 
-  private const tokenCookie = 'access_token';
+   private loginUrl = 'http://localhost:8080/spring-security-oauth-server/oauth/authorize';
+   private redirectUrl = 'http://localhost:4200/';
+   private clientId = 'sampleClientId';
+   private scope = 'read write foo bar';
 
-  constructor(private router: Router, private httpClient: HttpClient, private cookieService: CookieService) { }
+   constructor(private router: Router, private httpClient: HttpClient, private oauthService: OAuthService) {
+      this.oauthService.loginUrl = this.loginUrl;
+      this.oauthService.redirectUri = this.redirectUrl;
+      this.oauthService.clientId = this.clientId;
+      this.oauthService.scope = this.scope;
+      this.oauthService.setStorage(sessionStorage);
+      this.oauthService.tryLogin({});
+   }
 
-  obtainAccessToken(loginData: any) {
-    const params = new HttpParams();
-    params.append('username', loginData.username);
-    params.append('password', loginData.password);
-    params.append('grant_type', 'password');
-    params.append('client_id', 'fooClientIdPassword');
+   obtainAccessToken() {
+      this.oauthService.initImplicitFlow();
+   }
 
-    const headers = new HttpHeaders()
-      .set('Content-type', 'application/x-www-form-urlencoded; charset=utf-8')
-      .set('Authorization', 'Basic ' + btoa('fooClientIdPassword: secret'));
+   getResource(resourceUrl: string): Observable<Foo> {
+      const headers = new HttpHeaders()
+         .set('Content-type', 'application/x-www-form-urlencoded; charset=utf-8')
+         .set('Authorization', 'Bearer ' + this.oauthService.getAccessToken());
 
-    this.httpClient.post('http://localhost:8080/spring-security-oauth-server/oauth/token',
-      { headers, params }).subscribe(
-        data => this.saveToken(data),
-        err => alert('Invalid Credentials')
-      );
-  }
+      return this.httpClient.get<Foo>(resourceUrl, { headers });
+   }
 
-  saveToken(token: any) {
-    const expireDate = new Date().getTime() + (1000 * token.expires_in);
-    this.cookieService.set(this.tokenCookie, token.access_token, expireDate);
-    this.router.navigate(['/']);
-  }
+   isLoggedIn() {
+      if (this.oauthService.getAccessToken() === null) {
+         return false;
+      }
 
-  getResource(resourceUrl: string): Observable<Foo> {
-    const headers = new HttpHeaders()
-      .set('Content-type', 'application/x-www-form-urlencoded; charset=utf-8')
-      .set('Authorization', 'Bearer ' + this.cookieService.get(this.tokenCookie));
+      return true;
+   }
 
-    return this.httpClient.get<Foo>(resourceUrl, { headers });
-  }
-
-  checkCredentials() {
-    if (!this.cookieService.check(this.tokenCookie)) {
-      this.router.navigate(['/login']);
-    }
-  }
-
-  logout() {
-    this.cookieService.delete('access_token');
-    this.router.navigate(['/login']);
-  }
+   logout() {
+      this.oauthService.logOut();
+      location.reload();
+   }
 }
